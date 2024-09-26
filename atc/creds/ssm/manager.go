@@ -18,13 +18,14 @@ const DefaultPipelineSecretTemplate = "/concourse/{{.Team}}/{{.Pipeline}}/{{.Sec
 const DefaultTeamSecretTemplate = "/concourse/{{.Team}}/{{.Secret}}"
 
 type SsmManager struct {
-	AwsAccessKeyID         string `mapstructure:"access_key" long:"access-key" description:"AWS Access key ID"`
-	AwsSecretAccessKey     string `mapstructure:"secret_key" long:"secret-key" description:"AWS Secret Access Key"`
-	AwsSessionToken        string `mapstructure:"session_token" long:"session-token" description:"AWS Session Token"`
-	AwsRegion              string `mapstructure:"region" long:"region" description:"AWS region to send requests to"`
-	PipelineSecretTemplate string `mapstructure:"pipeline_secret_template" long:"pipeline-secret-template" description:"AWS SSM parameter name template used for pipeline specific parameter" default:"/concourse/{{.Team}}/{{.Pipeline}}/{{.Secret}}"`
-	TeamSecretTemplate     string `mapstructure:"team_secret_template" long:"team-secret-template" description:"AWS SSM parameter name template used for team specific parameter" default:"/concourse/{{.Team}}/{{.Secret}}"`
-	SharedPath             string `mapstructure:"shared_path" long:"shared-path" description:"AWS SSM parameter path used for shared parameters"`
+	AwsAccessKeyID         string   `mapstructure:"access_key" long:"access-key" description:"AWS Access key ID"`
+	AwsSecretAccessKey     string   `mapstructure:"secret_key" long:"secret-key" description:"AWS Secret Access Key"`
+	AwsSessionToken        string   `mapstructure:"session_token" long:"session-token" description:"AWS Session Token"`
+	AwsRegion              string   `mapstructure:"region" long:"region" description:"AWS region to send requests to"`
+	PipelineSecretTemplate string   `mapstructure:"pipeline_secret_template" long:"pipeline-secret-template" description:"AWS SSM parameter name template used for pipeline specific parameter" default:"/concourse/{{.Team}}/{{.Pipeline}}/{{.Secret}}"`
+	TeamSecretTemplate     string   `mapstructure:"team_secret_template" long:"team-secret-template" description:"AWS SSM parameter name template used for team specific parameter" default:"/concourse/{{.Team}}/{{.Secret}}"`
+	SharedPath             string   `mapstructure:"shared_path" long:"shared-path" description:"AWS SSM parameter path used for shared parameters"`
+	AssumeRoleChain        map[string]string `mapstructure:"assume_role_chain" long:"assume-role-chain" description:"Map of roles to assume with optional tokens"`
 	Ssm                    *Ssm
 }
 
@@ -62,6 +63,28 @@ func (manager *SsmManager) getSession() (*session.Session, error) {
 	config := &aws.Config{Region: &manager.AwsRegion}
 	if manager.AwsAccessKeyID != "" {
 		config.Credentials = credentials.NewStaticCredentials(manager.AwsAccessKeyID, manager.AwsSecretAccessKey, manager.AwsSessionToken)
+	}
+
+	// Assume role chain logic
+	for roleArn, token := range manager.AssumeRoleChain {
+		stsSvc := sts.New(session.Must(session.NewSession(config)))
+		input := &sts.AssumeRoleInput{
+			RoleArn:         aws.String(roleArn),
+			RoleSessionName: aws.String("example-session"),
+		}
+
+		// Use token if provided
+		if token != "" {
+			input.TokenCode = aws.String(token)
+		}
+
+		result, err := stsSvc.AssumeRole(input)
+		if err != nil {
+			return nil, err
+		}
+
+		creds := credentials.NewStaticCredentials(*result.Credentials.AccessKeyId, *result.Credentials.SecretAccessKey, *result.Credentials.SessionToken)
+		config.Credentials = creds
 	}
 
 	return session.NewSession(config)
