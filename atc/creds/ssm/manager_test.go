@@ -30,6 +30,25 @@ var _ = Describe("SsmManager", func() {
 	Describe("Health()", func() {
 	})
 
+	Describe("AssumeRoleChain", func() {
+		BeforeEach(func() {
+			manager = ssm.SsmManager{
+				AwsRegion:         "test-region",
+				AwsAccessKeyID:    "access",
+				AwsSecretAccessKey: "secret",
+				AssumeRoleChain: map[string]string{
+					"arn:aws:iam::123456789012:role/role1": "token1",
+					"arn:aws:iam::123456789012:role/role2": "",
+				},
+			}
+		})
+
+		It("should handle a chain of assume-role actions", func() {
+			_, err := manager.Init(nil)
+			Expect(err).To(BeNil())
+		})
+	})
+
 	Describe("Validate()", func() {
 		JustBeforeEach(func() {
 			manager = ssm.SsmManager{AwsRegion: "test-region"}
